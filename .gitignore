@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.env*
+.streamlit/secrets.toml
+*.csv
+*.zip
+data/
+artifacts/*
+!artifacts/.gitkeep
+configs/*.json
+!configs/*.example.json
+.cache/
+.ipynb_checkpoints/
