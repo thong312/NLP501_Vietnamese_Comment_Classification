@@ -6,9 +6,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    candidates = [ROOT / name for name in ("app.py", "pyproject.toml", "README.md", "VALIDATION.md", "instruction.md", ".gitignore")]
+    candidates = [ROOT / name for name in ("app.py", "pyproject.toml", "README.md", "VALIDATION.md", "DATA_REPORT.md", "instruction.md", ".gitignore")]
     candidates += list(ROOT.glob("requirements-*.txt"))
-    candidates += [ROOT / "configs/active_model.example.json", ROOT / "artifacts/.gitkeep"]
+    candidates += list((ROOT / "configs").glob("*.example.json"))
+    candidates += [ROOT / "artifacts/.gitkeep"]
     for folder in ("src/vihsd", "scripts", "notebooks", "tests"):
         candidates += [p for p in (ROOT / folder).rglob("*")
                        if p.is_file() and "__pycache__" not in p.parts and p.suffix in (".py", ".ipynb")]

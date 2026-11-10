@@ -1,0 +1,13 @@
+{
+  "source": "https://huggingface.co/datasets/uitnlp/vihsd",
+  "text_column": "free_text",
+  "label_column": "label_id",
+  "label_mapping": {"0": "CLEAN", "1": "OFFENSIVE", "2": "HATE"},
+  "mapping_source": "https://github.com/sonlam1102/vihsd/blob/main/ViHSD_DNN.ipynb — label_id được dùng trực tiếp với to_categorical; confusion_matrix theo thứ tự clean/offensive/hate; đối chiếu ngày 2026-11-10",
+  "empty_text_policy": "drop",
+  "expected_sha256": {
+    "train": "516a4ac12bcfd64720a6de352b3c30d019377f90a5907eff80e91d0ae2526360",
+    "dev": "1d42bc7e78b796f9a61bb30490171e5d48cbdee41f97c1235754894d28402ff7",
+    "test": "ba8ae9b62c40caebcbe8af9a09590296bca286e83e22dd639de31a62ed16f5a5"
+  }
+}

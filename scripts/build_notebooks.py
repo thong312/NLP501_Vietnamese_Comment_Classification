@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+DATASET_CONFIG = json.loads((ROOT / "configs/dataset.example.json").read_text(encoding="utf-8"))
 
 
 def cell(kind, source):
@@ -22,11 +23,15 @@ CSV_DIR = "/content/vihsd-data"  # có thể đổi sang thư mục Drive đã m
 UPLOAD_CSV = True  # False nếu CSV_DIR đã chứa đủ ba CSV hợp lệ
 HF_REVISION = ""  # SHA commit đầy đủ của uitnlp/vihsd nếu DATA_MODE="hf"
 HF_FILENAMES = {"train": "train.csv", "dev": "dev.csv", "test": "test.csv"}
-TEXT_COLUMN = ""  # đọc header và tài liệu nguồn rồi điền
-LABEL_COLUMN = ""
-LABEL_MAPPING = {}  # mã gốc dạng chuỗi → CLEAN/OFFENSIVE/HATE, điền sau xác minh
-MAPPING_SOURCE = ""  # URL/tài liệu và vị trí xác nhận mã nhãn; không đoán mã số
-CSV_SOURCE = ""  # nguồn cấp CSV hợp lệ, không chứa thông tin bí mật
+# Preset cho đúng ba CSV nhóm đã tải và kiểm tra; không chứa bình luận nguồn.
+DATASET_CONFIG = __DATASET_CONFIG__
+TEXT_COLUMN = DATASET_CONFIG["text_column"]
+LABEL_COLUMN = DATASET_CONFIG["label_column"]
+LABEL_MAPPING = DATASET_CONFIG["label_mapping"]
+MAPPING_SOURCE = DATASET_CONFIG["mapping_source"]
+CSV_SOURCE = DATASET_CONFIG["source"]
+EMPTY_TEXT_POLICY = DATASET_CONFIG["empty_text_policy"]  # drop: ghi nhận và bỏ văn bản rỗng
+EXPECTED_SHA256 = DATASET_CONFIG["expected_sha256"]  # cùng snapshot cho cả ba notebook
 SEED = 42
 SMOKE = True  # đổi False cho lần train chính thức; smoke không được chọn model
 RUN_ID = "{kind}-smoke-001"  # dùng ID mới cho mỗi lần chạy; không ghi đè artifact
@@ -120,8 +125,12 @@ elif DATA_MODE == "csv":
 else:
     raise ValueError("DATA_MODE chỉ nhận csv hoặc hf.")
 splits, dataset_metadata = load_data(data_dir, TEXT_COLUMN, LABEL_COLUMN, LABEL_MAPPING,
-                                   MAPPING_SOURCE, source, revision, SEED, SMOKE)
+                                   MAPPING_SOURCE, source, revision, SEED, SMOKE,
+                                   empty_text_policy=EMPTY_TEXT_POLICY,
+                                   expected_sha256=EXPECTED_SHA256)
 print("Phân bố nhãn gốc:", dataset_metadata["original_counts"])
+print("Bỏ văn bản rỗng theo quy tắc chung:", dataset_metadata["dropped_empty_text"])
+print("Phân bố sau lọc:", dataset_metadata["filtered_counts"])
 print("Số mẫu dùng:", dataset_metadata["used_counts"])
 print("Trùng giữa split (giữ nguyên split gốc, không in bình luận):", dataset_metadata["cross_split_duplicates"])
 print("SHA-256:", dataset_metadata["sha256"])
@@ -193,14 +202,16 @@ for filename, kind, title, explanation in SPECS:
              "Chỉ train trên Colab. Sửa cấu hình, rồi **Runtime → Run all**. Lần đầu giữ SMOKE=True để kiểm tra luồng; "
              "sau đó dùng ID mới và SMOKE=False cho kết quả chính thức. Cả nhóm phải dùng cùng ZIP/SHA repo và cùng dữ liệu/cấu hình mapping/seed. "
              "Chưa có kết quả cho tới khi notebook chạy thành công. Nếu Colab yêu cầu restart sau pip, restart rồi Run all."),
-        cell("markdown", "## 1. Cấu hình\n\nCSV có mã số phải được xác minh mapping với nguồn cấp trước khi chạy. "
+        cell("markdown", "## 1. Cấu hình\n\nĐã điền preset cho CSV của nhóm: free_text/label_id; 0=CLEAN, 1=OFFENSIVE, 2=HATE, đối chiếu notebook tác giả. "
+             "SHA-256 cố định cùng snapshot; bỏ dòng văn bản rỗng có ghi metadata. Không cần đổi tên dev.csv. "
              "Không điền token tại đây: dùng Colab Secrets với tên HF_TOKEN. Với HF, xác nhận đường dẫn file từ Files của revision được cấp quyền."),
-        cell("code", CONFIG.replace("{kind}", kind)),
+        cell("code", CONFIG.replace("{kind}", kind).replace("__DATASET_CONFIG__", repr(DATASET_CONFIG))),
         cell("markdown", "## 2. Lấy source có dấu vết và cài môi trường\n\nZIP chỉ chứa source của nhóm; chia sẻ cùng một ZIP cho ba thành viên. "
              "Nếu clone Git, dùng URL repo nhóm đã đưa source lên và SHA commit đầy đủ."),
         cell("code", SETUP),
         cell("markdown", "## 3. Dữ liệu và phân bố nhãn\n\nDùng split gốc, giữ nguyên dòng trùng và báo số lượng. "
-             "Dừng nếu rỗng, nhãn lạ hoặc thiếu lớp; không tự lọc hay thay dataset."),
+             "Bỏ văn bản rỗng theo preset chung, ghi số lượng và vị trí bản ghi (header tính là bản ghi 1); "
+             "dừng nếu SHA khác, nhãn lạ, toàn bộ split rỗng hoặc thiếu lớp sau lọc. Không thay dataset."),
         cell("code", DATA),
         cell("markdown", "## 4. Huấn luyện và cố định checkpoint\n\nFit/vocabulary/trọng số lớp chỉ trên train. Dev chọn cấu hình/checkpoint; test chỉ đánh giá cuối."),
         cell("code", TRAIN.replace("{kind}", kind)),

@@ -14,3 +14,4 @@ configs/*.json
 !configs/*.example.json
 .cache/
 .ipynb_checkpoints/
+HANDOFF_CLAUDE.md

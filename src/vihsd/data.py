@@ -14,29 +14,46 @@ def normalize(text):
 
 
 def load_data(directory, text_column, label_column, label_mapping, mapping_source,
-              source, revision=None, seed=42, smoke=False):
+              source, revision=None, seed=42, smoke=False, *, empty_text_policy="error",
+              expected_sha256=None):
     if not mapping_source or not label_mapping or set(label_mapping.values()) != set(LABELS):
         raise ValueError("Cần mapping mã gốc → CLEAN/OFFENSIVE/HATE và nguồn xác minh mapping.")
     if not text_column or not label_column or not source:
         raise ValueError("Cần khai báo cột văn bản, cột nhãn và nguồn dữ liệu.")
+    if empty_text_policy not in ("error", "drop"):
+        raise ValueError("empty_text_policy chỉ nhận error hoặc drop.")
+    if expected_sha256 is not None and set(expected_sha256) != {"train", "dev", "test"}:
+        raise ValueError("expected_sha256 cần đủ train/dev/test; dùng None nếu chưa cố định snapshot.")
     mapping = {str(k): v for k, v in label_mapping.items()}
-    splits, fingerprints, counts = {}, {}, {}
+    splits, fingerprints, counts, dropped_empty, filtered_counts = {}, {}, {}, {}, {}
     for split in ("train", "dev", "test"):
         path = Path(directory) / f"{split}.csv"
         fingerprints[split] = hashlib.sha256(path.read_bytes()).hexdigest()
+        if expected_sha256 is not None and fingerprints[split] != expected_sha256[split]:
+            raise ValueError(f"{path.name}: SHA-256 khác snapshot nhóm đã kiểm tra. "
+                             "Dùng đúng CSV gốc hoặc kiểm tra lại toàn bộ snapshot trước khi đổi cấu hình.")
         with path.open(encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             if not {text_column, label_column}.issubset(reader.fieldnames or []):
                 raise ValueError(f"{path.name}: không tìm thấy cột đã cấu hình.")
-            rows = []
+            rows, dropped_lines = [], []
+            counts[split] = dict.fromkeys(LABELS, 0)
             for line, row in enumerate(reader, 2):
                 text, code = normalize(row[text_column] or ""), row[label_column]
-                if not text or code not in mapping:
-                    raise ValueError(f"{path.name}, dòng {line}: văn bản rỗng hoặc nhãn lạ.")
+                if code not in mapping:
+                    raise ValueError(f"{path.name}, dòng {line}: nhãn lạ.")
+                counts[split][mapping[code]] += 1
+                if not text:
+                    if empty_text_policy == "error":
+                        raise ValueError(f"{path.name}, dòng {line}: văn bản rỗng; "
+                                         "chỉ dùng empty_text_policy='drop' nếu nhóm đã thống nhất quy tắc lọc.")
+                    dropped_lines.append(line)
+                    continue
                 rows.append((text, LABEL_TO_ID[mapping[code]]))
-        counts[split] = {label: sum(y == i for _, y in rows) for i, label in enumerate(LABELS)}
-        if not rows or any(n == 0 for n in counts[split].values()):
-            raise ValueError(f"{split}: rỗng hoặc thiếu lớp: {counts[split]}")
+        dropped_empty[split] = {"count": len(dropped_lines), "record_numbers": dropped_lines}
+        filtered_counts[split] = {label: sum(y == i for _, y in rows) for i, label in enumerate(LABELS)}
+        if not rows or any(n == 0 for n in filtered_counts[split].values()):
+            raise ValueError(f"{split}: rỗng hoặc thiếu lớp sau lọc: {filtered_counts[split]}")
         splits[split] = rows
     overlaps = {}
     for a, b in (("train", "dev"), ("train", "test"), ("dev", "test")):
@@ -50,7 +67,9 @@ def load_data(directory, text_column, label_column, label_mapping, mapping_sourc
                     columns={"text": text_column, "label": label_column},
                     label_mapping=mapping, mapping_source=mapping_source,
                     normalization="NFC+whitespace-v1", duplicate_policy="report-and-preserve-original-splits",
-                    cross_split_duplicates=overlaps, original_counts=counts, seed=seed)
+                    cross_split_duplicates=overlaps, original_counts=counts, seed=seed,
+                    empty_text_policy=empty_text_policy, dropped_empty_text=dropped_empty,
+                    filtered_counts=filtered_counts)
     if smoke:
         for split, rows in splits.items():
             rng = random.Random(seed)

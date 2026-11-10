@@ -4,7 +4,7 @@ Phân loại bình luận tiếng Việt với ViHSD.
 
 Demo học tập cho nhóm ba người, dự đoán **CLEAN** (bình thường), **OFFENSIVE** (xúc phạm), **HATE** (thù ghét). Mỗi người train một model trên Google Colab. Local chỉ kiểm tra mã và chạy suy luận bằng một artifact đã xuất.
 
-**Trạng thái bàn giao:** đã triển khai mã, ba notebook và app. Chưa chạy Colab, chưa có CSV được cấp quyền hoặc artifact do nhóm cung cấp. Chưa có điểm thực nghiệm, checkpoint hay model được chọn. Các số liệu giả lập trong tests chỉ dùng kiểm tra hợp đồng và không phải kết quả nghiên cứu.
+**Trạng thái bàn giao:** đã triển khai mã, ba notebook và app; đã kiểm tra ba CSV người dùng tải từ Hugging Face trong `data/` và điền preset tương ứng. Chưa chạy Colab, chưa có artifact, điểm thực nghiệm, checkpoint hay model được chọn. Các số liệu giả lập trong tests chỉ dùng kiểm tra hợp đồng và không phải kết quả nghiên cứu.
 
 | Model | Thành viên | Dev macro-F1 | Test macro-F1 | Trạng thái |
 |---|---|---|---|---|
@@ -73,18 +73,32 @@ Mỗi notebook hỗ trợ hai cách:
 1. **HF có quyền:** tạo Colab Secret `HF_TOKEN`, bật quyền notebook đọc Secret. Đặt `DATA_MODE="hf"`, điền `HF_REVISION` là SHA commit đầy đủ của dataset và `HF_FILENAMES` là đường dẫn ba CSV thực tế ở revision đó. Chỉ tải từ `uitnlp/vihsd`. Không dán token vào cell, URL clone hay log.
 2. **CSV hợp lệ:** đặt `DATA_MODE="csv"`, upload đồng thời `train.csv`, `dev.csv`, `test.csv`. Hoặc đặt `UPLOAD_CSV=False`, sửa `CSV_DIR` sang thư mục đã có đủ ba file trên Colab/Drive. Điền `CSV_SOURCE` ghi nguồn cấp hợp lệ.
 
-Code không mặc định đoán tên cột hoặc mã nhãn nguồn. Trong cell cấu hình, điền `TEXT_COLUMN`, `LABEL_COLUMN`, `LABEL_MAPPING` và `MAPPING_SOURCE` sau khi đọc schema/tài liệu nguồn được cấp quyền. Các giá trị mapping phải là đúng ba nhãn CLEAN/OFFENSIVE/HATE. Ví dụ minh họa **chỉ khi CSV thực sự dùng tên nhãn**:
+Ba CSV nhóm vừa tải đã được kiểm tra: tên cột `free_text` và `label_id`, nhãn nguồn là `0`, `1`, `2`. Đã đối chiếu notebook của tác giả: `label_id` đưa trực tiếp vào `to_categorical` và confusion matrix có thứ tự clean/offensive/hate. Preset được lưu tại `configs/dataset.example.json` và đã điền sẵn trong **cả ba notebook**:
 
 ```python
-TEXT_COLUMN = "ten_cot_da_xac_minh"
-LABEL_COLUMN = "ten_cot_nhan_da_xac_minh"
-LABEL_MAPPING = {"CLEAN": "CLEAN", "OFFENSIVE": "OFFENSIVE", "HATE": "HATE"}
-MAPPING_SOURCE = "Tài liệu nguồn cấp: vị trí xác nhận ý nghĩa và mã nhãn"
+TEXT_COLUMN = "free_text"
+LABEL_COLUMN = "label_id"
+LABEL_MAPPING = {"0": "CLEAN", "1": "OFFENSIVE", "2": "HATE"}
+EMPTY_TEXT_POLICY = "drop"
 ```
 
-Nếu nguồn dùng mã số, phải điền mapping mã số dạng chuỗi theo tài liệu đã xác minh, không suy ra từ thứ tự nội bộ. Tại thời điểm bàn giao chưa xác nhận schema CSV trong vùng dữ liệu có hạn chế truy cập, nên cấu hình mapping để trống và notebook dừng nếu thiếu.
+Nguồn đối chiếu mapping: [ViHSD_DNN.ipynb của tác giả](https://github.com/sonlam1102/vihsd/blob/main/ViHSD_DNN.ipynb). Preset kèm `MAPPING_SOURCE`, nguồn Hugging Face và SHA-256 của ba file đã kiểm tra. Không cần đổi tên `dev.csv`: đây chính là split dùng validation. `EXPECTED_SHA256` ngăn ba thành viên dùng nhầm snapshot khác. Nếu đổi phiên bản dữ liệu, kiểm tra và cập nhật preset cho cả nhóm, không bỏ kiểm tra chỉ để chạy qua lỗi.
 
-Loader chuẩn hóa Unicode NFC và khoảng trắng; dừng khi dữ liệu rỗng, cột thiếu, văn bản rỗng, nhãn lạ hoặc split thiếu lớp. Giữ nguyên split gốc và mọi dòng trùng, báo số văn bản trùng và số dòng liên quan giữa từng cặp split. Chính sách này bảo toàn benchmark gốc nhưng kết quả có thể chịu ảnh hưởng bởi trùng dữ liệu; ghi rõ trong báo cáo. Ba người phải dùng cùng chính sách, không tự bỏ trùng riêng từng notebook.
+Loader chuẩn hóa Unicode NFC và khoảng trắng; dừng khi SHA khác, cột thiếu, nhãn lạ hoặc split rỗng/thiếu lớp sau lọc. Bộ CSV thực tế có **2 văn bản rỗng ở train**; preset dùng `empty_text_policy="drop"` để bỏ chúng khi đọc, ghi số lượng và vị trí bản ghi vào metadata, không sửa file CSV nguồn. API mặc định vẫn là `error` nếu không chọn quy tắc bỏ dòng rõ ràng. Ba notebook dùng cùng chính sách này; test không có dòng rỗng nên giữ nguyên toàn bộ 6.680 mẫu test.
+
+Giữ nguyên phân chia train/dev/test và các dòng trùng, báo số văn bản trùng và số dòng liên quan giữa từng cặp split. Có **321 / 787 / 91** văn bản sau chuẩn hóa trùng tương ứng train–dev / train–test / dev–test. Vì vậy kết quả có thể chịu ảnh hưởng bởi trùng dữ liệu; ghi rõ trong báo cáo. Không tự bỏ trùng riêng từng notebook. Chi tiết số mẫu, SHA và chính sách ở `DATA_REPORT.md`.
+
+| Split | Số dòng gốc | Bỏ rỗng | Số dùng full |
+|---|---:|---:|---:|
+| train | 24.048 | 2 | 24.046 |
+| dev | 2.672 | 0 | 2.672 |
+| test | 6.680 | 0 | 6.680 |
+
+Kiểm tra lại CSV ở local (chỉ đọc dữ liệu, không fit/train, không in bình luận):
+
+```powershell
+python scripts/inspect_data.py --data-dir data
+```
 
 Manifest ghi nguồn, revision HF hoặc SHA-256 từng CSV, cột và mapping, số mẫu từng lớp, số dòng trùng, seed, quy tắc chuẩn hóa/lọc và số mẫu thực dùng. Script so sánh yêu cầu metadata dataset giống nhau, vì vậy cả nhóm nên dùng cùng phương thức lấy dữ liệu và cùng giá trị cấu hình nguồn/mapping.
 
@@ -103,7 +117,7 @@ Script tạo `vihsd-source.zip` theo danh sách source cố định, chỉ lấy
 Cho từng notebook:
 
 1. Mở [Google Colab](https://colab.research.google.com/), chọn **File → Upload notebook** rồi tải một trong ba file `notebooks/*.ipynb`.
-2. Sửa cell **Cấu hình**: nguồn code, nguồn dữ liệu, cột/mapping đã xác minh, seed và ID lần train. Ba notebook dùng cùng seed 42, cùng source ZIP/SHA và cùng snapshot CSV. Dùng ID mới cho mỗi lần chạy, ví dụ `tfidf-full-001`, `textcnn-full-001`, `phobert-full-001`; không ghi đè thư mục cũ.
+2. Sửa cell **Cấu hình**: nguồn code, nguồn dữ liệu, seed và ID lần train. Cột/mapping, chính sách bỏ rỗng và SHA đã điền sẵn cho ba CSV hiện tại, không cần nhập lại. Ba notebook dùng cùng seed 42, cùng source ZIP/SHA và cùng snapshot CSV. Dùng ID mới cho mỗi lần chạy, ví dụ `tfidf-full-001`, `textcnn-full-001`, `phobert-full-001`; không ghi đè thư mục cũ.
 3. Notebook 01 dùng CPU; notebook 02/03 chọn **Runtime → Change runtime type → T4 GPU** nếu còn quota. Với notebook 03, điền `PHOBERT_REVISION` là SHA đầy đủ của [vinai/phobert-base-v2](https://huggingface.co/vinai/phobert-base-v2/tree/main).
 4. Giữ `SMOKE=True` lần đầu, chọn **Runtime → Run all**, upload source ZIP và ba CSV khi được hỏi. Smoke lấy tối đa 32 mẫu mỗi lớp mỗi split, train neural 1 epoch; kết quả được đánh dấu smoke và bị loại khỏi chọn model.
 5. Sau khi smoke chạy thành công, đặt `SMOKE=False`, dùng `RUN_ID` mới rồi Run all cho kết quả chính thức. Không điều chỉnh cấu hình theo điểm test. Nếu Colab yêu cầu restart sau pip, restart rồi Run all lại từ đầu.
@@ -170,8 +184,8 @@ python -m compileall -q src scripts app.py
 python -m pip check
 ```
 
-Đã đạt **10 tests**, kiểm tra cấu trúc và cú pháp ba notebook (outputs trống), import package, CSV/mapping/fingerprint bằng câu tự soạn, quy tắc chọn model trên metadata tạm (dev ưu tiên, tie, thiếu model, smoke, dataset khác nhau, điểm không hợp lệ), CLI chỉ ghi cấu hình khi có cờ, kiểm tra đường dẫn và giao diện Streamlit khi thiếu model. Kiểm tra thêm bảng/biểu đồ và cache qua stub UI; đây không phải xác nhận suy luận hoặc đổi artifact thật. Các tests không gọi fit/train, không xuất checkpoint và không để lại metadata giả trong `artifacts/`.
+Các tests kiểm tra cấu trúc và cú pháp ba notebook (outputs trống), preset chung, chính sách bỏ rỗng/giữ nguyên file nguồn, SHA, import package, CSV/mapping/fingerprint bằng câu tự soạn, quy tắc chọn model trên metadata tạm (dev ưu tiên, tie, thiếu model, smoke, dataset/quy tắc lọc khác nhau, điểm không hợp lệ), CLI chỉ ghi cấu hình khi có cờ, kiểm tra đường dẫn và giao diện Streamlit khi thiếu model. Kiểm tra thêm bảng/biểu đồ và cache qua stub UI; đây không phải xác nhận suy luận hoặc đổi artifact thật. Các tests không gọi fit/train, không xuất checkpoint và không để lại metadata giả trong `artifacts/`. Kết quả chạy tests ở `VALIDATION.md`.
 
-**Cần nhóm xác nhận sau Colab:** quyền truy cập và schema ViHSD thật; Run all ba notebook; huấn luyện, điểm số và xuất ZIP; nạp lại artifact thật; suy luận local và chuyển cấu hình giữa hai artifact thật; PhoBERT offline đầy đủ. Chưa có artifact nên chưa kiểm chứng các bước này và chưa công bố model tốt nhất.
+**Cần nhóm xác nhận sau Colab:** Run all ba notebook với ba CSV đã kiểm tra; huấn luyện, điểm số và xuất ZIP; nạp lại artifact thật; suy luận local và chuyển cấu hình giữa hai artifact thật; PhoBERT offline đầy đủ. Nếu chọn tải trực tiếp từ HF thì cần quyền/token và revision thật của thành viên. Chưa có artifact nên chưa kiểm chứng các bước này và chưa công bố model tốt nhất.
 
 Các đường dẫn bàn giao chính: `notebooks/`, `src/vihsd/`, `scripts/compare_models.py`, `configs/active_model.example.json`, `app.py`. Báo cáo kiểm tra chi tiết ở `VALIDATION.md`.

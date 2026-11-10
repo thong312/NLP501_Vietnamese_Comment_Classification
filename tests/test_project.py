@@ -145,6 +145,63 @@ def test_no_local_training():
         require_colab()
 
 
+def test_empty_text_policy_preserves_original_files(tmp_path):
+    import hashlib
+    for split in ("train", "dev", "test"):
+        with (tmp_path / f"{split}.csv").open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["text", "code"])
+            writer.writerows([("Câu sạch", "0"), ("Câu thứ hai", "1"), ("Câu thứ ba", "2"),
+                              ("   ", "0"), ("", "1")])
+    hashes = {s: hashlib.sha256((tmp_path / f"{s}.csv").read_bytes()).hexdigest()
+              for s in ("train", "dev", "test")}
+    args = (tmp_path, "text", "code", dict(zip(("0", "1", "2"), LABELS)), "test spec", "synthetic")
+    with pytest.raises(ValueError, match="văn bản rỗng"):
+        load_data(*args)
+    splits, metadata = load_data(*args, empty_text_policy="drop", expected_sha256=hashes)
+    assert all(len(rows) == 3 for rows in splits.values())
+    assert metadata["original_counts"]["train"] == dict(zip(LABELS, [2, 2, 1]))
+    assert metadata["filtered_counts"]["train"] == dict.fromkeys(LABELS, 1)
+    assert metadata["dropped_empty_text"]["train"] == {"count": 2, "record_numbers": [5, 6]}
+    assert metadata["sha256"] == hashes
+    assert all(hashlib.sha256((tmp_path / f"{s}.csv").read_bytes()).hexdigest() == hashes[s] for s in hashes)
+    wrong = {**hashes, "train": "0" * 64}
+    with pytest.raises(ValueError, match="SHA-256"):
+        load_data(*args, empty_text_policy="drop", expected_sha256=wrong)
+    with pytest.raises(ValueError, match="empty_text_policy"):
+        load_data(*args, empty_text_policy="unknown")
+
+
+def test_empty_text_drop_does_not_hide_unknown_labels(tmp_path):
+    (tmp_path / "train.csv").write_text("text,code\n,99\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="nhãn lạ"):
+        load_data(tmp_path, "text", "code", dict(zip(("0", "1", "2"), LABELS)),
+                  "test spec", "synthetic", empty_text_policy="drop")
+
+
+def test_notebooks_share_dataset_preset():
+    preset = json.loads((ROOT / "configs/dataset.example.json").read_text(encoding="utf-8"))
+    for path in (ROOT / "notebooks").glob("*.ipynb"):
+        notebook = json.loads(path.read_text(encoding="utf-8"))
+        configuration = next(c["source"] for c in notebook["cells"]
+                             if c["cell_type"] == "code" and "EXPECTED_SHA256 =" in c["source"])
+        namespace = {}
+        exec(configuration, namespace)
+        assert namespace["DATASET_CONFIG"] == preset
+        assert namespace["TEXT_COLUMN"] == "free_text" and namespace["LABEL_COLUMN"] == "label_id"
+        assert namespace["EMPTY_TEXT_POLICY"] == "drop"
+        assert namespace["EXPECTED_SHA256"] == preset["expected_sha256"]
+
+
+def test_comparison_requires_same_filter_policy():
+    rows = [row(kind) for kind in ("tfidf", "textcnn", "phobert")]
+    for item in rows:
+        item["manifest"]["dataset"]["empty_text_policy"] = "drop"
+    assert select(rows)[0] is not None
+    rows[2]["manifest"]["dataset"]["empty_text_policy"] = "error"
+    assert select(rows)[0] is None
+
+
 def test_missing_and_escaping_config(tmp_path):
     with pytest.raises(ValueError, match="active_model"):
         configured_artifact(tmp_path)
