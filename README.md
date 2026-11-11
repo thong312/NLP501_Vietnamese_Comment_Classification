@@ -4,13 +4,40 @@ Phân loại bình luận tiếng Việt với ViHSD.
 
 Demo học tập cho nhóm ba người, dự đoán **CLEAN** (bình thường), **OFFENSIVE** (xúc phạm), **HATE** (thù ghét). Mỗi người train một model trên Google Colab. Local chỉ kiểm tra mã và chạy suy luận bằng một artifact đã xuất.
 
-**Trạng thái bàn giao:** đã triển khai mã, ba notebook và app; đã kiểm tra ba CSV người dùng tải từ Hugging Face trong `data/` và điền preset tương ứng. Chưa chạy Colab, chưa có artifact, điểm thực nghiệm, checkpoint hay model được chọn. Các số liệu giả lập trong tests chỉ dùng kiểm tra hợp đồng và không phải kết quả nghiên cứu.
+**Trạng thái cập nhật 11/11/2026:** nhóm đã chạy thành công cả ba notebook trên Colab ở chế độ **full**, xuất ZIP artifact và cung cấp về local. Đã xác minh metadata cùng dataset/split/mapping/seed/quy tắc lọc, nạp và thử suy luận CPU với cả ba model, kiểm tra đổi model qua giao diện trong chế độ offline. Script so sánh chọn **PhoBERT theo macro-F1 dev cao nhất**. Không huấn luyện local; số liệu dưới đây lấy từ `metrics.json` của artifact thật và khớp output notebook đã chạy.
 
-| Model | Thành viên | Dev macro-F1 | Test macro-F1 | Trạng thái |
-|---|---|---|---|---|
-| TF-IDF + Logistic Regression | 1 | — | — | Chờ kết quả Colab |
-| TextCNN | 2 | — | — | Chờ kết quả Colab |
-| PhoBERT | 3 | — | — | Chờ kết quả Colab |
+## Kết quả huấn luyện
+
+Các lần chạy dùng seed **42**, source revision `eeb1cd0a6c8929a3bd01eab0bde976b92e45751b` và cùng snapshot CSV đã kiểm tra. Số mẫu sau lọc: **24.046 train / 2.672 dev / 6.680 test**. TextCNN/PhoBERT chạy CUDA trên Colab. Điểm theo thang 0–1, làm tròn 4 chữ số; đây là một lần chạy cho mỗi cấu hình, không phải trung bình nhiều seed.
+
+| Model | Thành viên | Run ID | Cấu hình thực tế | Dev macro-F1 | Test macro-F1 |
+|---|---:|---|---|---:|---:|
+| TF-IDF + Logistic Regression | 1 | `tfidf-full-001` | Thử C=0.5/1/2; chọn **C=2.0** | 0,6099 | 0,6052 |
+| TextCNN | 2 | `textcnn-full-025-001` | 25 epoch, batch 64; chọn **epoch 22** | 0,6413 | 0,6133 |
+| **PhoBERT** | 3 | `phobert-full-001` | 20 epoch, batch 8; chọn **epoch 6** | **0,6701** | **0,6461** |
+
+Checkpoint neural được chọn theo dev, không lấy mặc định epoch cuối. Test chỉ dùng báo cáo sau khi cố định checkpoint; không dùng test để chọn model. Artifact PhoBERT ghi revision pretrained `86cd7fd4c148980922ac11a2cf5e257f2ba639e1` của `vinai/phobert-base-v2`.
+
+F1 từng lớp:
+
+| Model | Split | CLEAN | OFFENSIVE | HATE |
+|---|---|---:|---:|---:|
+| TF-IDF + Logistic Regression | dev | 0,9122 | 0,3837 | 0,5337 |
+| TF-IDF + Logistic Regression | test | 0,9098 | 0,3712 | 0,5347 |
+| TextCNN | dev | 0,9290 | 0,3978 | 0,5970 |
+| TextCNN | test | 0,9253 | 0,3629 | 0,5517 |
+| PhoBERT | dev | 0,9374 | 0,4920 | 0,5809 |
+| PhoBERT | test | 0,9358 | 0,4333 | 0,5691 |
+
+PhoBERT có macro-F1 dev cao nhất trong ba run hợp lệ nên được chọn cho demo local. Trên test, F1 OFFENSIVE và HATE thấp hơn CLEAN; cần xem kết quả theo lớp, không chỉ nhìn một điểm tổng hợp. Dữ liệu có trùng giữa các split như mô tả ở phần dữ liệu, nên các điểm số này không chứng minh chất lượng trên mọi bình luận mới.
+
+Notebook có log huấn luyện, bảng precision/recall/F1 và confusion matrix:
+
+- [01 — TF-IDF + Logistic Regression đã chạy](notebooks_run/01_tfidf_logistic_regression.ipynb)
+- [02 — TextCNN đã chạy](notebooks_run/02_textcnn.ipynb)
+- [03 — PhoBERT đã chạy](notebooks_run/03_phobert.ipynb)
+
+Các bản ở `notebooks/` vẫn là template không output để thành viên chạy lại. CSV, ZIP và trọng số model không được commit; clone repo mới vẫn cần nhận artifact của nhóm, cài dependencies và cấu hình model để chạy demo.
 
 ## Cài đặt local
 
@@ -47,6 +74,7 @@ notebooks/
   01_tfidf_logistic_regression.ipynb
   02_textcnn.ipynb
   03_phobert.ipynb
+notebooks_run/                      # Ba notebook đã chạy, giữ log và bảng kết quả
 src/vihsd/
   labels.py                         # 0=CLEAN, 1=OFFENSIVE, 2=HATE, chỉ là mã NỘI BỘ
   data.py                           # CSV, mapping, SHA-256, kiểm tra split
@@ -59,7 +87,7 @@ src/vihsd/
 scripts/compare_models.py
 scripts/build_notebooks.py          # Tái tạo đúng ba notebook
 tests/test_project.py
-artifacts/.gitkeep                  # Chưa có model thật
+artifacts/.gitkeep                  # Git chỉ giữ placeholder; artifact thật được lưu local
 ```
 
 CSV, ZIP, artifact, cấu hình active, secrets, môi trường ảo và cache nằm trong `.gitignore`. Không đưa bình luận nguồn vào mã, notebook outputs hay Git.
@@ -125,6 +153,8 @@ Cho từng notebook:
 
 Mặc định full: TF-IDF tối đa 80.000 đặc trưng, thử C=0.5/1/2 trên dev; TextCNN 5 epoch, batch 64, 128 token; PhoBERT 3 epoch, batch 8, 128 token, AdamW 2e-5. Class weights, vocabulary và TF-IDF chỉ tính từ train. Neural chọn epoch có macro-F1 dev cao nhất, sau đó mới đánh giá test một lần. Không gộp train+dev để fit lại.
 
+Đây là mặc định của template. Các run đã báo cáo phía trên đặt `EPOCHS=25` cho TextCNN và `EPOCHS=20` cho PhoBERT; xem cấu hình và output trong `notebooks_run/` để tái lập đúng các run đó.
+
 PhoBERT dùng **PyVi 0.1.1** tách từ trước tokenizer, cùng hàm `segment()` khi train và suy luận. PyVi đóng gói tài nguyên tách từ trong wheel, không cần Java và không tải thêm model khi chạy local. [Tài liệu VinAI](https://huggingface.co/vinai/phobert-base-v2) yêu cầu đầu vào đã tách từ và khuyến nghị RDRSegmenter; lựa chọn PyVi ở dự án này cần được ghi rõ như một khác biệt trong báo cáo. Không tự thay segmenter cho artifact đã train. Model và tokenizer PhoBERT được lưu bằng `save_pretrained`, trọng số safetensors; adapter chỉ nạp bằng `local_files_only=True`.
 
 ## Nhận artifact, so sánh và đổi model
@@ -186,6 +216,8 @@ python -m pip check
 
 Các tests kiểm tra cấu trúc và cú pháp ba notebook (outputs trống), preset chung, chính sách bỏ rỗng/giữ nguyên file nguồn, SHA, import package, CSV/mapping/fingerprint bằng câu tự soạn, quy tắc chọn model trên metadata tạm (dev ưu tiên, tie, thiếu model, smoke, dataset/quy tắc lọc khác nhau, điểm không hợp lệ), CLI chỉ ghi cấu hình khi có cờ, kiểm tra đường dẫn và giao diện Streamlit khi thiếu model. Kiểm tra thêm bảng/biểu đồ và cache qua stub UI; đây không phải xác nhận suy luận hoặc đổi artifact thật. Các tests không gọi fit/train, không xuất checkpoint và không để lại metadata giả trong `artifacts/`. Kết quả chạy tests ở `VALIDATION.md`.
 
-**Cần nhóm xác nhận sau Colab:** Run all ba notebook với ba CSV đã kiểm tra; huấn luyện, điểm số và xuất ZIP; nạp lại artifact thật; suy luận local và chuyển cấu hình giữa hai artifact thật; PhoBERT offline đầy đủ. Nếu chọn tải trực tiếp từ HF thì cần quyền/token và revision thật của thành viên. Chưa có artifact nên chưa kiểm chứng các bước này và chưa công bố model tốt nhất.
+**Đã xác nhận thêm ngày 11/11/2026:** nhận và kiểm tra ba artifact full cùng metadata dữ liệu; phiên bản thư viện artifact khớp môi trường local; script chọn PhoBERT và ghi `configs/active_model.json`. Đã dùng Streamlit AppTest với artifact thật để nạp lần lượt TF-IDF → TextCNN → PhoBERT, nhập câu tự soạn, kiểm tra bảng/kết quả và cache đổi model. Các lần kiểm tra này bật `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`; sau đó khôi phục cấu hình PhoBERT. Đây là kiểm tra luồng suy luận, không phải đánh giá chất lượng trên bộ dữ liệu mới.
+
+**Giới hạn còn lại:** chưa đánh giá nhiều seed hoặc tập dữ liệu ngoài ViHSD; kiểm tra giao diện tự động không thay thế thử nghiệm người dùng. Luồng tải dataset trực tiếp bằng token HF của từng thành viên cần được kiểm tra với tài khoản có quyền. `VALIDATION.md` lưu biên bản kiểm tra mã ban đầu ngày 10/11/2026; trạng thái có artifact và kết quả thật mới nhất được cập nhật tại README này.
 
 Các đường dẫn bàn giao chính: `notebooks/`, `src/vihsd/`, `scripts/compare_models.py`, `configs/active_model.example.json`, `app.py`. Báo cáo kiểm tra chi tiết ở `VALIDATION.md`.
